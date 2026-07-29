@@ -6,7 +6,7 @@
     QUICK START
     ═══════════════════════════════════════════════
 
-        local AXUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/uganda-Y/refs/heads/main/AXUI.lua"))()
+        local AXUI = loadstring(game:HttpGet("url/AXUI.lua"))()
         local window = AXUI:CreateWindow({ title = "My Menu" })
         local tab   = window:Tab("AIM", "🎯")
         local group = tab:Group("Aimbot")
@@ -1174,7 +1174,20 @@ function AXUI:CreateWindow(config)
         return row
     end
 
+    -- forward declaration: color picker's close function is defined further down,
+    -- but dropdown needs to call it too (so opening one closes the other)
+    local closeActivePopup
+
     -- ──── DROPDOWN ────
+    local activeDropdownList = nil
+    local function closeActiveDropdown()
+        if activeDropdownList and activeDropdownList.frame and activeDropdownList.frame.Parent then
+            activeDropdownList.frame:Destroy()
+        end
+        if activeDropdownList then activeDropdownList.isOpenRef.value = false end
+        activeDropdownList = nil
+    end
+
     local function makeDropdown(parent, id, label, options, default, onChange)
         local row = makeRow(parent, label)
         local value = default or options[1]
@@ -1203,22 +1216,11 @@ function AXUI:CreateWindow(config)
             ZIndex = 4, Parent = btn,
         })
 
-        local listFrame = new("Frame", {
-            AnchorPoint = Vector2.new(1, 0),
-            Position = UDim2.new(1, 0, 1, 2),
-            Size = UDim2.new(0, 100, 0, 0),
-            BackgroundColor3 = Theme.PANEL_BG_2,
-            BorderSizePixel = 0, Visible = false,
-            ClipsDescendants = true,
-            ZIndex = 20, Parent = btn,
-        })
-        corner(listFrame, 5)
-        stroke(listFrame, Theme.ACCENT, 1, 0.8)
-        new("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = listFrame })
+        local isOpenRef = { value = false }
+        local listFrame -- built fresh each open, parented to screenGui (top-level, never clipped/shadowed)
 
-        local isOpen = false
-        local function buildOptions()
-            for _, c in ipairs(listFrame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+        local function buildOptions(frame)
+            for _, c in ipairs(frame:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
             for i, opt in ipairs(options) do
                 local optBtn = new("TextButton", {
                     Size = UDim2.new(1, 0, 0, 24),
@@ -1229,7 +1231,7 @@ function AXUI:CreateWindow(config)
                     TextColor3 = (opt == value) and Theme.ACCENT or Theme.TEXT_DIM,
                     TextSize = 10, Font = FONT,
                     TextXAlignment = Enum.TextXAlignment.Left,
-                    LayoutOrder = i, ZIndex = 21, Parent = listFrame,
+                    LayoutOrder = i, ZIndex = 101, Parent = frame,
                 })
                 optBtn.MouseEnter:Connect(function() tweenObj(optBtn, 0.1, { BackgroundTransparency = 0.8, BackgroundColor3 = Theme.ACCENT }) end)
                 optBtn.MouseLeave:Connect(function()
@@ -1239,19 +1241,45 @@ function AXUI:CreateWindow(config)
                 optBtn.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         value = opt; State[id] = value; btn.Text = tostring(opt)
-                        listFrame.Visible = false; isOpen = false
+                        closeActiveDropdown()
                         if onChange then pcall(onChange, value) end
                     end
                 end)
             end
-            listFrame.Size = UDim2.new(0, 100, 0, #options * 24)
+            frame.Size = UDim2.new(0, 100, 0, #options * 24)
         end
-        buildOptions()
+
+        local function openDropdown()
+            closeActiveDropdown() -- close any other open dropdown first
+            closeActivePopup() -- also close any open color picker
+
+            local frame = new("Frame", {
+                BackgroundColor3 = Theme.PANEL_BG_2,
+                BorderSizePixel = 0,
+                Size = UDim2.new(0, 100, 0, #options * 24),
+                ZIndex = 100, Parent = screenGui,
+            })
+            corner(frame, 5)
+            stroke(frame, Theme.ACCENT, 1, 0.8)
+            new("UIListLayout", { Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = frame })
+
+            local absPos = btn.AbsolutePosition
+            local absSize = btn.AbsoluteSize
+            frame.Position = UDim2.new(0, absPos.X + absSize.X - 100, 0, absPos.Y + absSize.Y + 2)
+
+            buildOptions(frame)
+            listFrame = frame
+            isOpenRef.value = true
+            activeDropdownList = { frame = frame, isOpenRef = isOpenRef }
+        end
 
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                isOpen = not isOpen; listFrame.Visible = isOpen
-                if isOpen then buildOptions() end
+                if isOpenRef.value then
+                    closeActiveDropdown()
+                else
+                    openDropdown()
+                end
             end
         end)
 
@@ -1259,7 +1287,7 @@ function AXUI:CreateWindow(config)
             type = "dropdown", row = row,
             getValue = function() return value end,
             setValue = function(v, silent) value = v; State[id] = v; btn.Text = tostring(v); if not silent and onChange then pcall(onChange, v) end end,
-            setOptions = function(newOpts) options = newOpts; buildOptions() end,
+            setOptions = function(newOpts) options = newOpts end,
         }
         return row
     end
@@ -1374,7 +1402,7 @@ function AXUI:CreateWindow(config)
 
     -- ──── COLOR PICKER ────
     local activePickerPopup = nil
-    local function closeActivePopup()
+    closeActivePopup = function()
         if activePickerPopup and activePickerPopup.Parent then
             activePickerPopup:Destroy()
         end
@@ -1410,8 +1438,15 @@ function AXUI:CreateWindow(config)
         swatch.InputBegan:Connect(function(input)
             if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
 
-            -- close any existing popup
+            -- if this swatch's own popup is already open, just close it
+            if activePickerPopup and activePickerPopup:GetAttribute("OwnerId") == id then
+                closeActivePopup()
+                return
+            end
+
+            -- close any other open popup (and any open dropdown, since they can visually collide)
             closeActivePopup()
+            closeActiveDropdown()
 
             -- build picker popup on screenGui (not clipped by scroll)
             local popup = new("Frame", {
@@ -1424,6 +1459,7 @@ function AXUI:CreateWindow(config)
             corner(popup, 10)
             stroke(popup, Theme.ACCENT, 1, 0.5)
             activePickerPopup = popup
+            popup:SetAttribute("OwnerId", id)
 
             -- position near swatch
             local absPos = swatch.AbsolutePosition
