@@ -469,8 +469,8 @@ function AXUI:CreateWindow(config)
         Size = UDim2.new(0, 24, 0, 24),
         BackgroundColor3 = Theme.PANEL_BG_2,
         BorderSizePixel = 0, AutoButtonColor = false,
-        Text = "✕", TextColor3 = Theme.TEXT_DIM,
-        TextSize = 12, Font = FONT,
+        Text = "X", TextColor3 = Theme.TEXT_DIM,
+        TextSize = 13, Font = Enum.Font.GothamBold,
         ZIndex = 8, Parent = header,
     })
     corner(closeBtn, 8)
@@ -1699,8 +1699,8 @@ function AXUI:CreateWindow(config)
                 Size = UDim2.new(0, 18, 0, 18),
                 BackgroundColor3 = Theme.PANEL_BG_2,
                 BorderSizePixel = 0, AutoButtonColor = false,
-                Text = "✕", TextColor3 = Theme.TEXT_DIM,
-                TextSize = 10, Font = FONT,
+                Text = "X", TextColor3 = Theme.TEXT_DIM,
+                TextSize = 10, Font = Enum.Font.GothamBold,
                 ZIndex = 108, Parent = popup,
             })
             corner(closeP, 4)
