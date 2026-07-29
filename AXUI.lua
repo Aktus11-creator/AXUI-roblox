@@ -212,10 +212,10 @@ function AXUI:CreateWindow(config)
 
     -- header element config
     local CFG_LOGO_TEXT       = config.logoText or "X"
-    local CFG_SHOW_FPS        = config.showFPS ~= false
-    local CFG_SHOW_CONNECTED  = config.showConnected ~= false
+    local CFG_SHOW_FPS        = (config.showFPS ~= false) and WIN_W >= 480
+    local CFG_SHOW_CONNECTED  = (config.showConnected ~= false) and WIN_W >= 620
     local CFG_CONNECTED_TEXT  = config.connectedText or "CONNECTED"
-    local CFG_SHOW_ONLINE     = config.showOnline ~= false
+    local CFG_SHOW_ONLINE     = (config.showOnline ~= false) and WIN_W >= 700
     local CFG_ONLINE_TEXT     = config.onlineText -- nil = auto
 
     -- sidebar config
