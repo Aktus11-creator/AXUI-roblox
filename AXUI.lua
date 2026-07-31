@@ -961,8 +961,15 @@ function AXUI:CreateWindow(config)
     -- ───────────────────────────────────────────
     -- CONTROL FACTORIES
     -- ───────────────────────────────────────────
-    local function makeRow(parent, label, subText)
+    -- reservedWidth = fixed px width (from the right edge) that this row's control needs.
+    -- The label is sized as "100% - reservedWidth" instead of a flat 0.6 scale, so it always
+    -- leaves exact room for the control regardless of how narrow the window/row is. It just
+    -- truncates with an ellipsis (TextTruncate.AtEnd) instead of drawing underneath the control.
+    local DEFAULT_RESERVED_WIDTH = 100
+
+    local function makeRow(parent, label, subText, reservedWidth)
         label = tostring(label or "???")
+        reservedWidth = reservedWidth or DEFAULT_RESERVED_WIDTH
         controlOrder = controlOrder + 1
         local row = new("Frame", {
             Size = UDim2.new(1, 0, 0, 38),
@@ -980,10 +987,12 @@ function AXUI:CreateWindow(config)
             Parent = row,
         })
         local labelY = subText and -4 or 0
+        -- Size = (100% of content width) - reservedWidth, floored so it never goes to 0/negative.
+        local labelSize = UDim2.new(1, -reservedWidth, 0, 14)
         new("TextLabel", {
             AnchorPoint = Vector2.new(0, 0.5),
             Position = UDim2.new(0, 0, 0.5, labelY),
-            Size = UDim2.new(0.6, 0, 0, 14),
+            Size = labelSize,
             BackgroundTransparency = 1,
             Text = label, TextColor3 = Theme.TEXT,
             TextSize = 11, Font = FONT,
@@ -995,11 +1004,12 @@ function AXUI:CreateWindow(config)
             new("TextLabel", {
                 AnchorPoint = Vector2.new(0, 0.5),
                 Position = UDim2.new(0, 0, 0.5, 8),
-                Size = UDim2.new(0.6, 0, 0, 10),
+                Size = UDim2.new(1, -reservedWidth, 0, 10),
                 BackgroundTransparency = 1,
                 Text = subText, TextColor3 = Theme.TEXT_FAINT,
                 TextSize = 9, Font = FONT,
                 TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
                 Parent = row,
             })
         end
@@ -1009,7 +1019,7 @@ function AXUI:CreateWindow(config)
 
     -- ──── TOGGLE ────
     local function makeToggle(parent, id, label, default, onChange, subText, tabName)
-        local row = makeRow(parent, label, subText)
+        local row = makeRow(parent, label, subText, 54) -- 42px track + gap
         local track = new("Frame", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, 0, 0.5, 0),
@@ -1087,7 +1097,7 @@ function AXUI:CreateWindow(config)
         local unit     = cfg.unit or ""
         local decimals = cfg.decimals or 0
 
-        local row = makeRow(parent, label)
+        local row = makeRow(parent, label, nil, 140) -- 120px track + 45px value label + gap
         local trackFrame = new("Frame", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, 0, 0.5, 0),
@@ -1189,7 +1199,7 @@ function AXUI:CreateWindow(config)
     end
 
     local function makeDropdown(parent, id, label, options, default, onChange)
-        local row = makeRow(parent, label)
+        local row = makeRow(parent, label, nil, 110) -- 100px button + gap
         local value = default or options[1]
         State[id] = value; Callbacks[id] = onChange
 
@@ -1294,7 +1304,7 @@ function AXUI:CreateWindow(config)
 
     -- ──── BUTTON ────
     local function makeButton(parent, id, label, btnText, danger, onClick, confirmOpts)
-        local row = makeRow(parent, label)
+        local row = makeRow(parent, label, nil, 70) -- 56px button + gap
         btnText = btnText or "BTN"
         local bg = danger and Color3.fromRGB(40, 12, 12) or Theme.ACCENT
         local bgTr = danger and 0.6 or 0.88
@@ -1346,7 +1356,7 @@ function AXUI:CreateWindow(config)
 
     -- ──── KEYBIND ────
     local function makeKeybind(parent, id, label, defaultKey, onBind)
-        local row = makeRow(parent, label)
+        local row = makeRow(parent, label, nil, 74) -- 60px capture button + gap
         local currentKey = defaultKey
         State[id] = currentKey; Callbacks[id] = onBind
 
@@ -1410,7 +1420,7 @@ function AXUI:CreateWindow(config)
     end
 
     local function makeColorPicker(parent, id, label, default, onChange, subText)
-        local row = makeRow(parent, label, subText)
+        local row = makeRow(parent, label, subText, 40) -- 26px swatch + gap
         local value = default or Color3.fromRGB(255, 255, 255)
         State[id] = value; Callbacks[id] = onChange
 
@@ -1726,7 +1736,7 @@ function AXUI:CreateWindow(config)
 
     -- ──── TEXT INPUT ────
     local function makeTextInput(parent, id, label, default, placeholder, onChange)
-        local row = makeRow(parent, label)
+        local row = makeRow(parent, label, nil, 114) -- 100px input box + gap
         local value = default or ""
         State[id] = value; Callbacks[id] = onChange
 
