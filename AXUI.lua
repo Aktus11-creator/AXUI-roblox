@@ -813,8 +813,11 @@ function AXUI:CreateWindow(config)
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = section,
         })
-        -- header row with fading line
+        -- header row with fading line (shows the subcategory, e.g. "AIMBOT")
+        -- Named so the search filter can recognize it and keep it visible whenever
+        -- this group has a matching result, instead of hiding it like a normal row.
         local hdr = new("Frame", {
+            Name = "GroupHeader",
             Size = UDim2.new(1, 0, 0, 20),
             BackgroundTransparency = 1, LayoutOrder = 0,
             Parent = section,
@@ -907,22 +910,6 @@ function AXUI:CreateWindow(config)
         contentScroll.CanvasPosition = Vector2.new(0, 0)
     end
 
-    -- Track active toggle count per tab for badges
-    local tabBadgeCounts = {}
-    local tabBadgeLabels = {}
-
-    local function updateBadge(tabName)
-        local lbl = tabBadgeLabels[tabName]
-        if not lbl then return end
-        local count = tabBadgeCounts[tabName] or 0
-        if count > 0 then
-            lbl.Text = tostring(count)
-            lbl.Visible = true
-        else
-            lbl.Visible = false
-        end
-    end
-
     local function createSidebarButton(name, icon)
         tabOrder = tabOrder + 1
         local btn = new("TextButton", {
@@ -964,23 +951,6 @@ function AXUI:CreateWindow(config)
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 6, Parent = btn,
         })
-
-        -- badge (active feature count)
-        local badge = new("TextLabel", {
-            AnchorPoint = Vector2.new(1, 0.5),
-            Position = UDim2.new(1, -8, 0.5, 0),
-            Size = UDim2.new(0, 18, 0, 14),
-            BackgroundColor3 = Theme.ACCENT,
-            BackgroundTransparency = 0.8,
-            BorderSizePixel = 0,
-            Text = "0", TextColor3 = Theme.ACCENT,
-            TextSize = 8, Font = Enum.Font.GothamBold,
-            Visible = false,
-            ZIndex = 7, Parent = btn,
-        })
-        corner(badge, 7)
-        tabBadgeLabels[name] = badge
-        tabBadgeCounts[name] = 0
 
         tabButtons[name] = { btn = btn, indicator = indicator, icon = iconLbl, label = lbl }
 
@@ -1053,7 +1023,7 @@ function AXUI:CreateWindow(config)
     end
 
     -- ──── TOGGLE ────
-    local function makeToggle(parent, id, label, default, onChange, subText, tabName)
+    local function makeToggle(parent, id, label, default, onChange, subText)
         local row = makeRow(parent, label, subText, 54) -- 42px track + gap
         local track = new("Frame", {
             AnchorPoint = Vector2.new(1, 0.5),
@@ -1077,6 +1047,9 @@ function AXUI:CreateWindow(config)
         State[id] = value
         Callbacks[id] = onChange
 
+        -- Reads Theme.ACCENT live each call (Theme is a shared table whose fields
+        -- SetAccent mutates in place), so calling this again after a theme change
+        -- re-colors this toggle without needing it to be flipped off/on.
         local function applyVisual()
             if value then
                 tweenObj(track, 0.15, { BackgroundColor3 = Theme.ACCENT })
@@ -1098,11 +1071,6 @@ function AXUI:CreateWindow(config)
         clickArea.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 value = not value; State[id] = value; applyVisual()
-                -- update badge
-                if tabName then
-                    tabBadgeCounts[tabName] = (tabBadgeCounts[tabName] or 0) + (value and 1 or -1)
-                    updateBadge(tabName)
-                end
                 if onChange then pcall(onChange, value) end
             end
         end)
@@ -1111,14 +1079,10 @@ function AXUI:CreateWindow(config)
             type = "toggle", row = row,
             getValue = function() return value end,
             setValue = function(v, silent)
-                local old = value
                 value = v; State[id] = v; applyVisual()
-                if tabName and old ~= v then
-                    tabBadgeCounts[tabName] = (tabBadgeCounts[tabName] or 0) + (v and 1 or -1)
-                    updateBadge(tabName)
-                end
                 if not silent and onChange then pcall(onChange, v) end
             end,
+            refreshTheme = function() applyVisual() end,
         }
         return row
     end
@@ -1878,7 +1842,7 @@ function AXUI:CreateWindow(config)
                 else
                     local anyVisible = false
                     for _, child in ipairs(g.section:GetChildren()) do
-                        if child:IsA("Frame") then
+                        if child:IsA("Frame") and child.Name ~= "GroupHeader" then
                             local sl = child:GetAttribute("SearchLabel") or ""
                             local match = sl:find(query, 1, true) ~= nil
                             child.Visible = match
@@ -1886,6 +1850,10 @@ function AXUI:CreateWindow(config)
                         end
                     end
                     g.section.Visible = anyVisible
+                    -- keep the subcategory header visible above its matched rows
+                    -- instead of hiding it along with the non-matching ones
+                    local hdr = g.section:FindFirstChild("GroupHeader")
+                    if hdr then hdr.Visible = anyVisible end
                 end
             end
         end
@@ -1959,6 +1927,13 @@ function AXUI:CreateWindow(config)
 
     local function fullUnload()
         unloaded = true
+        -- Turn every toggle off first (updates State AND fires each callback with false),
+        -- same as doPanic. Without this, a feature loop that polls window.State.X or only
+        -- reacts to the onChange callback would never be told to stop, and would keep
+        -- running after the menu itself is destroyed below.
+        for id, ctrl in pairs(Controls) do
+            if ctrl.type == "toggle" then ctrl.setValue(false, false) end
+        end
         for _, cb in ipairs(unloadCallbacks) do pcall(cb) end
         task.wait(0.1)
         if screenGui and screenGui.Parent then screenGui:Destroy() end
@@ -2091,7 +2066,7 @@ function AXUI:CreateWindow(config)
             local Group = {}
 
             function Group:Toggle(id, label, default, callback, subText)
-                makeToggle(section, id, label, default, callback, subText, name)
+                makeToggle(section, id, label, default, callback, subText)
                 recalcGroupHeights()
             end
 
@@ -2160,6 +2135,13 @@ function AXUI:CreateWindow(config)
             end
         end
         activeTabLabel.TextColor3 = Theme.ACCENT
+        -- Re-apply the new theme to any control whose colored elements were only set
+        -- at creation time or on last interaction (e.g. a toggle's track color), so
+        -- switching themes updates them immediately instead of waiting for the user
+        -- to re-toggle each one.
+        for _, ctrl in pairs(Controls) do
+            if ctrl.refreshTheme then pcall(ctrl.refreshTheme) end
+        end
     end
 
     function Window:OnPanic(cb)
