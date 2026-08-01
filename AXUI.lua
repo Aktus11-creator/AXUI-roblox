@@ -6,7 +6,7 @@
     QUICK START
     ═══════════════════════════════════════════════
 
-        local AXUI = loadstring(game:HttpGet("url/AXUI.lua"))()
+        local AXUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/AXUI-roblox/refs/heads/main/AXUI.lua"))()
         local window = AXUI:CreateWindow({ title = "My Menu" })
         local tab   = window:Tab("AIM", "🎯")
         local group = tab:Group("Aimbot")
