@@ -1,12 +1,32 @@
 --[[
-    AXUI · v1.0
+    AXUI · v1.1
     UI library for Roblox executor scripts
+
+    ═══════════════════════════════════════════════
+    CHANGELOG (v1.0 -> v1.1)
+    ═══════════════════════════════════════════════
+
+        - Fixed row labels colliding with slider/dropdown/keybind/etc. controls
+          on narrow windows (labels now reserve fixed space per control type
+          instead of a flat 0.6 scale width)
+        - Fixed window corners rendering square despite UICorner on the outer
+          frame (header/sidebar/content now round only their true outer corner
+          and stay square on interior seams)
+        - Fixed group subcategory headers (e.g. "AIMBOT", "ESP") disappearing
+          during search even when rows inside them matched
+        - Removed tab sidebar badges (enabled-feature count per tab)
+        - Fixed features continuing to run after unload/close — unload now
+          turns every toggle off first, same as panic does
+        - Fixed toggles not re-coloring after SetAccent() until manually
+          re-toggled (added a refreshTheme hook, wired into SetAccent)
+        - Smoothed toast animations: synced fade + slide with Quint easing
+          on entrance/exit, instead of an instant-appear + linear slide
 
     ═══════════════════════════════════════════════
     QUICK START
     ═══════════════════════════════════════════════
 
-        local AXUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/AXUI-roblox/refs/heads/main/AXUI.lua"))()
+        local AXUI = loadstring(game:HttpGet("url/AXUI.lua"))()
         local window = AXUI:CreateWindow({ title = "My Menu" })
         local tab   = window:Tab("AIM", "🎯")
         local group = tab:Group("Aimbot")
@@ -752,14 +772,15 @@ function AXUI:CreateWindow(config)
             Size = UDim2.new(1, 0, 0, 36),
             BackgroundColor3 = Theme.PANEL_BG_2,
             BorderSizePixel = 0,
-            BackgroundTransparency = 0, ClipsDescendants = true,
+            BackgroundTransparency = 1, ClipsDescendants = true,
             ZIndex = 11, Parent = toastStack,
         })
         corner(t, 10)
-        stroke(t, Theme.ACCENT, 1, 0.85)
-        new("Frame", {
+        local tStroke = stroke(t, Theme.ACCENT, 1, 1)
+        local accentBar = new("Frame", {
             Size = UDim2.new(0, 3, 1, 0),
             BackgroundColor3 = isDanger and Theme.DANGER or Theme.ACCENT,
+            BackgroundTransparency = 1,
             BorderSizePixel = 0, ZIndex = 12, Parent = t,
         })
         local dotF = new("Frame", {
@@ -767,25 +788,39 @@ function AXUI:CreateWindow(config)
             AnchorPoint = Vector2.new(0, 0.5),
             Size = UDim2.new(0, 5, 0, 5),
             BackgroundColor3 = isDanger and Theme.DANGER or Theme.ACCENT,
+            BackgroundTransparency = 1,
             BorderSizePixel = 0, ZIndex = 12, Parent = t,
         })
         corner(dotF, 3)
-        new("TextLabel", {
+        local textLbl = new("TextLabel", {
             Position = UDim2.new(0, 24, 0, 0),
             Size = UDim2.new(1, -32, 1, 0),
             BackgroundTransparency = 1,
             Text = message, TextColor3 = Theme.TEXT,
+            TextTransparency = 1,
             TextSize = 11, Font = FONT,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
             ZIndex = 12, Parent = t,
         })
+
+        -- Entrance: slide + fade happen together on a Quint/Out curve (no linear/Quad
+        -- snap) so the toast eases in smoothly instead of sliding in at a flat speed.
         t.Position = UDim2.new(1, 40, 0, 0)
-        tweenObj(t, 0.22, { Position = UDim2.new(0, 0, 0, 0) })
+        tweenObj(t, 0.35, { Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(tStroke, 0.35, { Transparency = 0.85 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(accentBar, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(dotF, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(textLbl, 0.35, { TextTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+
         task.delay(2.6, function()
             if t and t.Parent then
-                tweenObj(t, 0.2, { Position = UDim2.new(1, 40, 0, 0) })
-                task.wait(0.25)
+                tweenObj(t, 0.3, { Position = UDim2.new(1, 40, 0, 0), BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+                tweenObj(tStroke, 0.3, { Transparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+                tweenObj(accentBar, 0.3, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+                tweenObj(dotF, 0.3, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+                tweenObj(textLbl, 0.3, { TextTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+                task.wait(0.32)
                 if t and t.Parent then t:Destroy() end
             end
         end)
