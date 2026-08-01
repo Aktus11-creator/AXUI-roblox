@@ -7,7 +7,7 @@ Built for executor environments. Tested on JJSploit, Solara, and others. Handles
 ## Setup
 
 ```lua
-local AXUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/uganda-Y/refs/heads/main/AXUI.lua"))()
+local AXUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/AXUI-roblox/refs/heads/main/AXUI.lua"))()
 
 local window = AXUI:CreateWindow({
     title = "My Menu",
