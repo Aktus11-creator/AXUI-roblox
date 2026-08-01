@@ -491,9 +491,27 @@ function Boot.Run(config, onComplete)
         addLog("", TEXT_DIM, " ")
         addLog(greenText(COMPLETE_TEXT), ACCENT, "[*]")
         addLog(LAUNCH_TEXT, ACCENT_DIM, "[>]")
+
+        -- All detection data is final as of this point. Kick the caller's script off now,
+        -- on its own coroutine, so it starts loading WHILE the outro (flash/fade/destroy
+        -- below) is still playing — instead of blocking behind ~1.5-2s of pure decoration
+        -- that computes nothing new. Wrapping onComplete (the heavy work) in task.spawn,
+        -- not the reverse, is what keeps this animation from being starved by it.
+        if onComplete then
+            local info = {
+                executor = executor, capabilities = caps,
+                available = available, missing = missing,
+                hookReady = hookReady, drawReady = drawReady,
+                fps = estFPS, ping = ping,
+            }
+            task.spawn(function()
+                pcall(onComplete, info)
+            end)
+        end
+
         task.wait(0.6)
 
-        -- fade out with flash
+        -- fade out with flash (runs concurrently with onComplete above)
         local flash = new("Frame", {
             Size = UDim2.new(1, 0, 1, 0), BackgroundColor3 = ACCENT,
             BackgroundTransparency = 1, ZIndex = 10, Parent = screenGui,
@@ -509,15 +527,6 @@ function Boot.Run(config, onComplete)
         end
         task.wait(0.7)
         if screenGui and screenGui.Parent then screenGui:Destroy() end
-
-        if onComplete then
-            pcall(onComplete, {
-                executor = executor, capabilities = caps,
-                available = available, missing = missing,
-                hookReady = hookReady, drawReady = drawReady,
-                fps = estFPS, ping = ping,
-            })
-        end
     end)
 end
 
