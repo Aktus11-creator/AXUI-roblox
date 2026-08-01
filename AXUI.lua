@@ -155,6 +155,38 @@ local function stroke(obj, color, thickness, transparency)
     })
 end
 
+-- Rounds ALL 4 corners of `obj` with the given radius, then patches over the
+-- corners listed in `squareCorners` (each: "TopLeft"/"TopRight"/"BottomLeft"/"BottomRight")
+-- with a small solid square in `patchColor`. Use this for panels that sit flush against
+-- an outer rounded window on some edges but butt up against sibling panels on others —
+-- e.g. a header that should be rounded on top but square on the bottom where the
+-- sidebar/content begin. Without this, ClipsDescendants only clips to a rectangle;
+-- it does NOT mask children to the rounded shape, so square-cornered sibling frames
+-- drawn flush to the window edge visually square off what should be a rounded corner.
+local function squareCorners(obj, radius, patchColor, squareCornerList)
+    corner(obj, radius)
+    local ANCHORS = {
+        TopLeft     = { Vector2.new(0, 0), UDim2.new(0, 0, 0, 0) },
+        TopRight    = { Vector2.new(1, 0), UDim2.new(1, 0, 0, 0) },
+        BottomLeft  = { Vector2.new(0, 1), UDim2.new(0, 0, 1, 0) },
+        BottomRight = { Vector2.new(1, 1), UDim2.new(1, 0, 1, 0) },
+    }
+    for _, key in ipairs(squareCornerList) do
+        local a = ANCHORS[key]
+        if a then
+            new("Frame", {
+                AnchorPoint = a[1],
+                Position = a[2],
+                Size = UDim2.new(0, radius, 0, radius),
+                BackgroundColor3 = patchColor,
+                BorderSizePixel = 0,
+                ZIndex = (obj.ZIndex or 1),
+                Parent = obj,
+            })
+        end
+    end
+end
+
 local function tweenObj(obj, time, props, style, dir)
     if not obj or not obj.Parent then return nil end
     local ok, t = pcall(function()
@@ -311,6 +343,7 @@ function AXUI:CreateWindow(config)
         BorderSizePixel = 0, ZIndex = 5,
         Parent = window,
     })
+    squareCorners(header, 14, Theme.HEADER_BG, { "BottomLeft", "BottomRight" })
     -- bottom border
     new("Frame", {
         AnchorPoint = Vector2.new(0, 1),
@@ -518,6 +551,7 @@ function AXUI:CreateWindow(config)
         BorderSizePixel = 0, ZIndex = 3,
         Parent = window,
     })
+    squareCorners(sidebar, 14, Theme.SIDEBAR_BG, { "TopLeft", "TopRight", "BottomRight" })
     -- right border
     new("Frame", {
         AnchorPoint = Vector2.new(1, 0),
@@ -600,6 +634,7 @@ function AXUI:CreateWindow(config)
         BorderSizePixel = 0, ClipsDescendants = true,
         ZIndex = 2, Parent = window,
     })
+    squareCorners(contentFrame, 14, Theme.PANEL_BG, { "TopLeft", "TopRight", "BottomLeft" })
 
     -- search bar area
     local searchBar = new("Frame", {
