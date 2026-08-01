@@ -13,7 +13,7 @@ Terminal-style loading screen with executor detection and capability scanning.
 ## Usage
 
 ```lua
-local Boot = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/uganda-Y/refs/heads/main/AXUIBoot.lua"))()
+local Boot = loadstring(game:HttpGet("https://raw.githubusercontent.com/Aktus11-creator/AXUI-roblox/refs/heads/main/AXUIBoot.lua"))()
 
 Boot.Run({
     title = "MY SCRIPT",
