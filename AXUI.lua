@@ -21,6 +21,25 @@
           re-toggled (added a refreshTheme hook, wired into SetAccent)
         - Smoothed toast animations: synced fade + slide with Quint easing
           on entrance/exit, instead of an instant-appear + linear slide
+        - Added named config profiles: SaveConfig(name?)/LoadConfig(name?)/
+          ListConfigs()/DeleteConfig(name), stored under configFolder/profiles/
+          with a manifest index; omitting name keeps the original single-file
+          behavior
+        - Reworked theme refresh into an accent-bound registry (bindAccent()/
+          accentStroke()) covering every unconditionally-accent-colored element
+          (rows, sliders, dropdowns, keybinds, header/sidebar/search chrome,
+          etc.), not just toggles — SetAccent() now updates all of it live
+        - Fixed window dragging having no bounds check; it's now clamped to
+          the screen so it can't be dragged fully off-screen
+        - Search now checks every tab, not just the active one, and shows
+          "TAB · GROUP" context on cross-tab matches; switching tabs while
+          searching clears the search box first
+        - Added collapsible groups (accordion): click a group header to
+          collapse/expand it (chevron indicator); a search auto-expands
+          matches without losing the user's manual collapse preference
+        - Refined toast slide: Position now eases on Back/Out (slight
+          overshoot-and-settle) separately from the Quint/Out fade, with more
+          travel distance, so it reads as a deliberate slide-in
 
     ═══════════════════════════════════════════════
     QUICK START
@@ -337,6 +356,34 @@ function AXUI:CreateWindow(config)
     screenGui.Parent = parentTo or LocalPlayer:FindFirstChildOfClass("PlayerGui")
 
     -- ───────────────────────────────────────────
+    -- ACCENT-BOUND REGISTRY
+    -- ───────────────────────────────────────────
+    -- Anything colored with Theme.ACCENT at creation time only gets that color once —
+    -- Color3 is a value type, not a live reference, so when Theme.ACCENT changes later
+    -- (via SetAccent), already-created instances keep the OLD color until something
+    -- explicitly re-applies it. bindAccent()/accentStroke() register instances here so
+    -- SetAccent() can do a single pass and refresh everything that's UNCONDITIONALLY
+    -- accent-colored, instead of a small hand-picked list.
+    -- Only use these for elements whose color is ALWAYS Theme.ACCENT with no other
+    -- condition (on/off state, danger flag, selected/hover state, etc). Conditional
+    -- coloring needs its own refreshTheme closure in Controls[id] instead (see
+    -- makeToggle), since blindly overwriting it here would be wrong whenever the
+    -- condition currently evaluates to something other than accent.
+    local accentBindings = {}
+
+    local function bindAccent(instance, prop)
+        instance[prop] = Theme.ACCENT
+        table.insert(accentBindings, { instance = instance, prop = prop })
+        return instance
+    end
+
+    local function accentStroke(obj, thickness, transparency)
+        local s = stroke(obj, Theme.ACCENT, thickness, transparency)
+        bindAccent(s, "Color")
+        return s
+    end
+
+    -- ───────────────────────────────────────────
     -- WINDOW FRAME
     -- ───────────────────────────────────────────
     local window = new("Frame", {
@@ -350,7 +397,7 @@ function AXUI:CreateWindow(config)
         Parent = screenGui,
     })
     corner(window, 14)
-    stroke(window, Theme.ACCENT, 1, 0.78)
+    accentStroke(window, 1, 0.78)
     local windowScale = new("UIScale", { Scale = 1, Parent = window })
 
     -- ───────────────────────────────────────────
@@ -365,7 +412,7 @@ function AXUI:CreateWindow(config)
     })
     squareCorners(header, 14, Theme.HEADER_BG, { "BottomLeft", "BottomRight" })
     -- bottom border
-    new("Frame", {
+    bindAccent(new("Frame", {
         AnchorPoint = Vector2.new(0, 1),
         Position = UDim2.new(0, 0, 1, 0),
         Size = UDim2.new(1, 0, 0, 1),
@@ -373,7 +420,7 @@ function AXUI:CreateWindow(config)
         BackgroundTransparency = 0.78,
         BorderSizePixel = 0, ZIndex = 5,
         Parent = header,
-    })
+    }), "BackgroundColor3")
 
     -- logo square
     local logoBox = new("Frame", {
@@ -384,6 +431,7 @@ function AXUI:CreateWindow(config)
         BorderSizePixel = 0, ZIndex = 6,
         Parent = header,
     })
+    bindAccent(logoBox, "BackgroundColor3")
     corner(logoBox, 5)
     new("TextLabel", {
         Size = UDim2.new(1, 0, 1, 0),
@@ -430,7 +478,7 @@ function AXUI:CreateWindow(config)
             Parent = header,
         })
         corner(vPill, 7)
-        stroke(vPill, Theme.ACCENT, 1, 0.78)
+        accentStroke(vPill, 1, 0.78)
         local versionLabel = new("TextLabel", {
             Size = UDim2.new(1, 0, 1, 0),
             BackgroundTransparency = 1,
@@ -438,6 +486,7 @@ function AXUI:CreateWindow(config)
             TextSize = 9, Font = FONT,
             ZIndex = 7, Parent = vPill,
         })
+        bindAccent(versionLabel, "TextColor3")
     end
 
     -- FPS / Ping readout
@@ -465,7 +514,8 @@ function AXUI:CreateWindow(config)
             Parent = header,
         })
         corner(connDot, 3)
-        new("TextLabel", {
+        bindAccent(connDot, "BackgroundColor3")
+        bindAccent(new("TextLabel", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -166, 0.5, 0),
             Size = UDim2.new(0, 50, 0, 14),
@@ -474,7 +524,7 @@ function AXUI:CreateWindow(config)
             TextSize = 9, Font = FONT,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 6, Parent = header,
-        })
+        }), "TextColor3")
     end
 
     -- ONLINE pill
@@ -489,7 +539,7 @@ function AXUI:CreateWindow(config)
             Parent = header,
         })
         corner(onlinePill, 9)
-        stroke(onlinePill, Theme.ACCENT, 1, 0.78)
+        accentStroke(onlinePill, 1, 0.78)
         local olText = CFG_ONLINE_TEXT or ("ONLINE · " .. tostring(math.random(180, 400)))
         onlineLabel = new("TextLabel", {
             Size = UDim2.new(1, 0, 1, 0),
@@ -498,6 +548,7 @@ function AXUI:CreateWindow(config)
             TextSize = 8, Font = FONT,
             ZIndex = 7, Parent = onlinePill,
         })
+        bindAccent(onlineLabel, "TextColor3")
     end
 
     -- minimize button
@@ -550,7 +601,25 @@ function AXUI:CreateWindow(config)
         UserInputService.InputChanged:Connect(function(input)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 local delta = input.Position - dragStart
-                window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                -- Resolve to an absolute pixel target (folding in whatever scale
+                -- component the starting position had) before clamping, since
+                -- clamping mixed scale+offset UDim2 values directly isn't meaningful.
+                local viewport = screenGui.AbsoluteSize
+                local rawX = startPos.X.Scale * viewport.X + startPos.X.Offset + delta.X
+                local rawY = startPos.Y.Scale * viewport.Y + startPos.Y.Offset + delta.Y
+
+                -- window is center-anchored (0.5, 0.5), so its edges sit half its
+                -- size away from its Position on each side.
+                local halfW = window.AbsoluteSize.X / 2
+                local halfH = window.AbsoluteSize.Y / 2
+                local minX, maxX = halfW, viewport.X - halfW
+                local minY, maxY = halfH, viewport.Y - halfH
+                if minX > maxX then minX, maxX = maxX, minX end -- window wider than viewport
+                if minY > maxY then minY, maxY = maxY, minY end -- window taller than viewport
+
+                local clampedX = math.clamp(rawX, minX, maxX)
+                local clampedY = math.clamp(rawY, minY, maxY)
+                window.Position = UDim2.new(0, clampedX, 0, clampedY)
             end
         end)
         UserInputService.InputEnded:Connect(function(input)
@@ -573,7 +642,7 @@ function AXUI:CreateWindow(config)
     })
     squareCorners(sidebar, 14, Theme.SIDEBAR_BG, { "TopLeft", "TopRight", "BottomRight" })
     -- right border
-    new("Frame", {
+    bindAccent(new("Frame", {
         AnchorPoint = Vector2.new(1, 0),
         Position = UDim2.new(1, 0, 0, 0),
         Size = UDim2.new(0, 1, 1, 0),
@@ -581,7 +650,7 @@ function AXUI:CreateWindow(config)
         BackgroundTransparency = 0.92,
         BorderSizePixel = 0, ZIndex = 4,
         Parent = sidebar,
-    })
+    }), "BackgroundColor3")
 
     -- sidebar label
     if CFG_SIDEBAR_LABEL ~= "" then
@@ -663,7 +732,7 @@ function AXUI:CreateWindow(config)
         BorderSizePixel = 0, ZIndex = 3,
         Parent = contentFrame,
     })
-    new("Frame", {
+    bindAccent(new("Frame", {
         AnchorPoint = Vector2.new(0, 1),
         Position = UDim2.new(0, 0, 1, 0),
         Size = UDim2.new(1, 0, 0, 1),
@@ -671,7 +740,7 @@ function AXUI:CreateWindow(config)
         BackgroundTransparency = 0.92,
         BorderSizePixel = 0, ZIndex = 3,
         Parent = searchBar,
-    })
+    }), "BackgroundColor3")
 
     -- search input
     local searchField = new("Frame", {
@@ -683,7 +752,7 @@ function AXUI:CreateWindow(config)
         Parent = searchBar,
     })
     corner(searchField, 8)
-    stroke(searchField, Theme.ACCENT, 1, 0.92)
+    accentStroke(searchField, 1, 0.92)
     new("TextLabel", {
         Position = UDim2.new(0, 8, 0, 0),
         Size = UDim2.new(0, 14, 1, 0),
@@ -716,6 +785,7 @@ function AXUI:CreateWindow(config)
         TextXAlignment = Enum.TextXAlignment.Right,
         ZIndex = 4, Parent = searchBar,
     })
+    bindAccent(activeTabLabel, "TextColor3")
 
     -- scroll container
     local contentScroll = new("ScrollingFrame", {
@@ -729,6 +799,7 @@ function AXUI:CreateWindow(config)
         CanvasSize = UDim2.new(0, 0, 0, 0),
         ZIndex = 2, Parent = contentFrame,
     })
+    bindAccent(contentScroll, "ScrollBarImageColor3")
     new("UIPadding", {
         PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
         PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
@@ -804,18 +875,22 @@ function AXUI:CreateWindow(config)
             ZIndex = 12, Parent = t,
         })
 
-        -- Entrance: slide + fade happen together on a Quint/Out curve (no linear/Quad
-        -- snap) so the toast eases in smoothly instead of sliding in at a flat speed.
-        t.Position = UDim2.new(1, 40, 0, 0)
-        tweenObj(t, 0.35, { Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-        tweenObj(tStroke, 0.35, { Transparency = 0.85 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-        tweenObj(accentBar, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-        tweenObj(dotF, 0.35, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-        tweenObj(textLbl, 0.35, { TextTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        -- Entrance: the SLIDE is now its own tween with a slight Back/Out overshoot
+        -- (settles a touch past 0 then eases back) so it reads as a deliberate slide-in
+        -- rather than a flat glide. Fade runs alongside on its own Quint/Out curve —
+        -- Back easing overshoots past the target value, which looks fine for Position
+        -- but would cause a visible transparency flicker if applied to fade too.
+        t.Position = UDim2.new(1, 50, 0, 0)
+        tweenObj(t, 0.45, { Position = UDim2.new(0, 0, 0, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        tweenObj(t, 0.3, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(tStroke, 0.3, { Transparency = 0.85 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(accentBar, 0.3, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(dotF, 0.3, { BackgroundTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+        tweenObj(textLbl, 0.3, { TextTransparency = 0 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
         task.delay(2.6, function()
             if t and t.Parent then
-                tweenObj(t, 0.3, { Position = UDim2.new(1, 40, 0, 0), BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+                tweenObj(t, 0.3, { Position = UDim2.new(1, 50, 0, 0), BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
                 tweenObj(tStroke, 0.3, { Transparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
                 tweenObj(accentBar, 0.3, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
                 tweenObj(dotF, 0.3, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
@@ -832,6 +907,43 @@ function AXUI:CreateWindow(config)
     local allGroups  = {}
     local groupOrder = 0
     local controlOrder = 0
+
+    -- ───────────────────────────────────────────
+    -- MANUAL CANVAS SIZING
+    -- ───────────────────────────────────────────
+    local function recalcGroupHeights()
+        local searching = searchBox.Text ~= ""
+        local visibleH, visibleCount = 0, 0
+        for _, g in ipairs(allGroups) do
+            local section = g.section
+            -- A group collapsed by the user renders as header-height-only, UNLESS
+            -- a search is active (search always shows full matched content
+            -- regardless of the user's collapsed preference).
+            local userCollapsed = section:GetAttribute("UserCollapsed")
+            local effectivelyCollapsed = userCollapsed and not searching
+            local totalH, childCount = 0, 0
+            if effectivelyCollapsed then
+                local hdr = section:FindFirstChild("GroupHeader")
+                totalH = hdr and hdr.Size.Y.Offset or 20
+                childCount = 1
+            else
+                for _, child in ipairs(section:GetChildren()) do
+                    if (child:IsA("Frame") or child:IsA("TextButton")) and child.Visible then
+                        childCount = childCount + 1
+                        totalH = totalH + child.Size.Y.Offset
+                    end
+                end
+                totalH = totalH + math.max(0, childCount - 1) * 4
+            end
+            section.Size = UDim2.new(1, 0, 0, totalH)
+            if section.Visible then
+                visibleH = visibleH + totalH
+                visibleCount = visibleCount + 1
+            end
+        end
+        local canvasH = visibleH + math.max(0, visibleCount - 1) * 16 + 20 + 10
+        contentScroll.CanvasSize = UDim2.new(0, 0, 0, canvasH)
+    end
 
     local function makeGroup(title)
         groupOrder = groupOrder + 1
@@ -857,7 +969,7 @@ function AXUI:CreateWindow(config)
             BackgroundTransparency = 1, LayoutOrder = 0,
             Parent = section,
         })
-        new("TextLabel", {
+        local headerLabel = new("TextLabel", {
             Size = UDim2.new(0, 0, 1, 0),
             AutomaticSize = Enum.AutomaticSize.X,
             BackgroundTransparency = 1,
@@ -883,32 +995,46 @@ function AXUI:CreateWindow(config)
             }),
             Parent = line,
         })
-        return section
-    end
 
-    -- ───────────────────────────────────────────
-    -- MANUAL CANVAS SIZING
-    -- ───────────────────────────────────────────
-    local function recalcGroupHeights()
-        local visibleH, visibleCount = 0, 0
-        for _, g in ipairs(allGroups) do
-            local section = g.section
-            local totalH, childCount = 0, 0
-            for _, child in ipairs(section:GetChildren()) do
-                if (child:IsA("Frame") or child:IsA("TextButton")) and child.Visible then
-                    childCount = childCount + 1
-                    totalH = totalH + child.Size.Y.Offset
+        -- Collapsible (accordion) support. UserCollapsed is the user's manual
+        -- preference from clicking the header; it's stored as an attribute (not a
+        -- plain local) so both this click handler and the search filter elsewhere
+        -- can read/write it. Search always shows matches regardless of this flag —
+        -- collapse only applies when there's no active search query.
+        section:SetAttribute("UserCollapsed", false)
+        local chevron = new("TextLabel", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, 0, 0.5, 0),
+            Size = UDim2.new(0, 14, 0, 14),
+            BackgroundTransparency = 1,
+            Text = "▾", TextColor3 = Theme.SECTION_HDR,
+            TextSize = 9, Font = FONT,
+            ZIndex = 1, Parent = hdr,
+        })
+        local hdrBtn = new("TextButton", {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+            ZIndex = 2, Parent = hdr,
+        })
+        hdrBtn.MouseButton1Click:Connect(function()
+            local newCollapsed = not section:GetAttribute("UserCollapsed")
+            section:SetAttribute("UserCollapsed", newCollapsed)
+            chevron.Text = newCollapsed and "▸" or "▾"
+            -- Don't fight an active search: if the user is mid-search, rows are
+            -- being shown/hidden by match state, not collapse state. The collapsed
+            -- preference still gets saved above and takes effect once the search
+            -- is cleared.
+            if searchBox.Text == "" then
+                for _, child in ipairs(section:GetChildren()) do
+                    if child:IsA("Frame") and child.Name ~= "GroupHeader" then
+                        child.Visible = not newCollapsed
+                    end
                 end
             end
-            totalH = totalH + math.max(0, childCount - 1) * 4
-            section.Size = UDim2.new(1, 0, 0, totalH)
-            if section.Visible then
-                visibleH = visibleH + totalH
-                visibleCount = visibleCount + 1
-            end
-        end
-        local canvasH = visibleH + math.max(0, visibleCount - 1) * 16 + 20 + 10
-        contentScroll.CanvasSize = UDim2.new(0, 0, 0, canvasH)
+            recalcGroupHeights()
+        end)
+
+        return section, headerLabel
     end
 
     -- ───────────────────────────────────────────
@@ -956,6 +1082,7 @@ function AXUI:CreateWindow(config)
             ZIndex = 5, Parent = navList,
         })
         corner(btn, 9)
+        bindAccent(btn, "BackgroundColor3")
 
         local indicator = new("Frame", {
             Position = UDim2.new(0, 0, 0.5, 0),
@@ -989,7 +1116,10 @@ function AXUI:CreateWindow(config)
 
         tabButtons[name] = { btn = btn, indicator = indicator, icon = iconLbl, label = lbl }
 
-        btn.MouseButton1Click:Connect(function() switchTab(name) end)
+        btn.MouseButton1Click:Connect(function()
+            if searchBox.Text ~= "" then searchBox.Text = "" end
+            switchTab(name)
+        end)
         btn.MouseEnter:Connect(function()
             if activeTab ~= name then tweenObj(btn, 0.1, { BackgroundTransparency = 0.92 }) end
         end)
@@ -1020,7 +1150,7 @@ function AXUI:CreateWindow(config)
             Parent = parent,
         })
         corner(row, 10)
-        stroke(row, Theme.ACCENT, 1, 0.93)
+        accentStroke(row, 1, 0.93)
         new("UIPadding", {
             PaddingLeft = UDim.new(0, 11), PaddingRight = UDim.new(0, 11),
             PaddingTop = UDim.new(0, 0), PaddingBottom = UDim.new(0, 0),
@@ -1140,13 +1270,14 @@ function AXUI:CreateWindow(config)
             BorderSizePixel = 0, Parent = row,
         })
         corner(trackFrame, 5)
-        stroke(trackFrame, Theme.ACCENT, 1, 0.9)
+        accentStroke(trackFrame, 1, 0.9)
         local fill = new("Frame", {
             Size = UDim2.new(0, 0, 1, 0),
             BackgroundColor3 = Theme.ACCENT,
             BackgroundTransparency = 0.4,
             BorderSizePixel = 0, Parent = trackFrame,
         })
+        bindAccent(fill, "BackgroundColor3")
         corner(fill, 5)
         local handle = new("Frame", {
             AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1155,6 +1286,7 @@ function AXUI:CreateWindow(config)
             BackgroundColor3 = Theme.ACCENT,
             BorderSizePixel = 0, ZIndex = 3, Parent = trackFrame,
         })
+        bindAccent(handle, "BackgroundColor3")
         corner(handle, 7)
         local valLabel = new("TextLabel", {
             AnchorPoint = Vector2.new(1, 0.5),
@@ -1166,6 +1298,7 @@ function AXUI:CreateWindow(config)
             TextXAlignment = Enum.TextXAlignment.Right,
             Parent = row,
         })
+        bindAccent(valLabel, "TextColor3")
 
         local value = default
         State[id] = value; Callbacks[id] = onChange
@@ -1249,7 +1382,7 @@ function AXUI:CreateWindow(config)
             ZIndex = 3, Parent = row,
         })
         corner(btn, 5)
-        stroke(btn, Theme.ACCENT, 1, 0.85)
+        accentStroke(btn, 1, 0.85)
         new("TextLabel", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -4, 0.5, 0),
@@ -1356,7 +1489,12 @@ function AXUI:CreateWindow(config)
             ZIndex = 3, Parent = row,
         })
         corner(btn, 6)
-        stroke(btn, textC, 1, 0.7)
+        local btnStroke = stroke(btn, textC, 1, 0.7)
+        if not danger then
+            bindAccent(btn, "BackgroundColor3")
+            bindAccent(btn, "TextColor3")
+            bindAccent(btnStroke, "Color")
+        end
 
         -- confirmation state
         local confirming = false
@@ -1371,13 +1509,13 @@ function AXUI:CreateWindow(config)
                     task.delay(2, function()
                         if confirming then
                             confirming = false
-                            btn.Text = origText; btn.TextColor3 = textC
+                            btn.Text = origText; btn.TextColor3 = danger and Theme.DANGER or Theme.ACCENT
                         end
                     end)
                     return
                 end
                 confirming = false
-                btn.Text = origText; btn.TextColor3 = textC
+                btn.Text = origText; btn.TextColor3 = danger and Theme.DANGER or Theme.ACCENT
                 if onClick then pcall(onClick) end
             end
         end)
@@ -1406,15 +1544,17 @@ function AXUI:CreateWindow(config)
             ZIndex = 3, Parent = row,
         })
         corner(cap, 4)
+        bindAccent(cap, "TextColor3")
         local capStroke = stroke(cap, Theme.ACCENT, 1, 0.78)
-        new("Frame", {
+        bindAccent(capStroke, "Color")
+        bindAccent(new("Frame", {
             AnchorPoint = Vector2.new(0, 1),
             Position = UDim2.new(0, 0, 1, 0),
             Size = UDim2.new(1, 0, 0, 2),
             BackgroundColor3 = Theme.ACCENT,
             BackgroundTransparency = 0.6,
             BorderSizePixel = 0, ZIndex = 4, Parent = cap,
-        })
+        }), "BackgroundColor3")
 
         local listening = false
         cap.InputBegan:Connect(function(input)
@@ -1470,7 +1610,7 @@ function AXUI:CreateWindow(config)
             Text = "", ZIndex = 3, Parent = row,
         })
         corner(swatch, 5)
-        stroke(swatch, Theme.ACCENT, 1, 0.7)
+        accentStroke(swatch, 1, 0.7)
 
         local function setColor(newColor)
             value = newColor; State[id] = newColor
@@ -1789,7 +1929,7 @@ function AXUI:CreateWindow(config)
             ZIndex = 3, Parent = row,
         })
         corner(box, 5)
-        stroke(box, Theme.ACCENT, 1, 0.85)
+        accentStroke(box, 1, 0.85)
         new("UIPadding", {
             PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
             Parent = box,
@@ -1820,14 +1960,14 @@ function AXUI:CreateWindow(config)
             LayoutOrder = controlOrder,
             Parent = parent,
         })
-        new("Frame", {
+        bindAccent(new("Frame", {
             AnchorPoint = Vector2.new(0.5, 0.5),
             Position = UDim2.new(0.5, 0, 0.5, 0),
             Size = UDim2.new(1, -20, 0, 1),
             BackgroundColor3 = Theme.ACCENT,
             BackgroundTransparency = 0.85,
             BorderSizePixel = 0, Parent = sep,
-        })
+        }), "BackgroundColor3")
         return sep
     end
 
@@ -1868,27 +2008,39 @@ function AXUI:CreateWindow(config)
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         local query = searchBox.Text:lower()
         for _, g in ipairs(allGroups) do
-            if g.tab == activeTab then
-                if query == "" then
-                    g.section.Visible = true
-                    for _, child in ipairs(g.section:GetChildren()) do
-                        if child:IsA("Frame") then child.Visible = true end
+            if query == "" then
+                -- restore normal tab-scoped browsing: only the active tab's groups show.
+                -- Reset every group's children (regardless of tab) back to their
+                -- USER-CHOSEN collapsed state, not just "visible" — otherwise clearing
+                -- a search would un-collapse anything the user had manually collapsed.
+                g.section.Visible = (g.tab == activeTab)
+                local userCollapsed = g.section:GetAttribute("UserCollapsed")
+                for _, child in ipairs(g.section:GetChildren()) do
+                    if child:IsA("Frame") and child.Name ~= "GroupHeader" then
+                        child.Visible = not userCollapsed
                     end
-                else
-                    local anyVisible = false
-                    for _, child in ipairs(g.section:GetChildren()) do
-                        if child:IsA("Frame") and child.Name ~= "GroupHeader" then
-                            local sl = child:GetAttribute("SearchLabel") or ""
-                            local match = sl:find(query, 1, true) ~= nil
-                            child.Visible = match
-                            if match then anyVisible = true end
-                        end
+                end
+                if g.headerLabel then g.headerLabel.Text = g.title:upper() end
+            else
+                -- global search: check every group regardless of which tab it's on
+                local anyVisible = false
+                for _, child in ipairs(g.section:GetChildren()) do
+                    if child:IsA("Frame") and child.Name ~= "GroupHeader" then
+                        local sl = child:GetAttribute("SearchLabel") or ""
+                        local match = sl:find(query, 1, true) ~= nil
+                        child.Visible = match
+                        if match then anyVisible = true end
                     end
-                    g.section.Visible = anyVisible
-                    -- keep the subcategory header visible above its matched rows
-                    -- instead of hiding it along with the non-matching ones
-                    local hdr = g.section:FindFirstChild("GroupHeader")
-                    if hdr then hdr.Visible = anyVisible end
+                end
+                g.section.Visible = anyVisible
+                -- keep the subcategory header visible above its matched rows instead
+                -- of hiding it along with the non-matching ones
+                local hdr = g.section:FindFirstChild("GroupHeader")
+                if hdr then hdr.Visible = anyVisible end
+                -- a cross-tab result loses its "which tab is this under" context, so
+                -- prefix the header with the tab name during search (e.g. "AIM · AIMBOT")
+                if g.headerLabel then
+                    g.headerLabel.Text = anyVisible and (g.tab:upper() .. " · " .. g.title:upper()) or g.title:upper()
                 end
             end
         end
@@ -1900,10 +2052,63 @@ function AXUI:CreateWindow(config)
     -- ───────────────────────────────────────────
     local CONFIG_FOLDER = config.configFolder or "AXUI_Config"
     local CONFIG_FILE   = CONFIG_FOLDER .. "/" .. (config.configFile or "config.json")
+    local PROFILES_DIR   = CONFIG_FOLDER .. "/profiles"
+    local PROFILES_INDEX = PROFILES_DIR .. "/_index.json"
 
-    local function saveConfig()
-        if not isfolder or not writefile then toast("File API not available", true); return end
-        pcall(function() if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end end)
+    -- Strips path separators and ".." before a name ever touches the filesystem,
+    -- so a bad/malicious profile name can't write outside the config folder.
+    local function sanitizeProfileName(name)
+        name = tostring(name or "")
+        name = name:gsub("[/\\]", "")
+        name = name:gsub("%.%.", "")
+        name = name:match("^%s*(.-)%s*$") or ""
+        return name
+    end
+
+    local function ensureProfilesDir()
+        pcall(function()
+            if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
+            if not isfolder(PROFILES_DIR) then makefolder(PROFILES_DIR) end
+        end)
+    end
+
+    -- The manifest lists known profile names. Used instead of listfiles()/directory
+    -- scanning, since not every executor implements directory listing reliably —
+    -- a manifest file keeps this portable across executors.
+    local function readProfileIndex()
+        if not isfile or not isfile(PROFILES_INDEX) then return {} end
+        local ok, json = pcall(readfile, PROFILES_INDEX)
+        if not ok then return {} end
+        local ok2, list = pcall(function() return HttpService:JSONDecode(json) end)
+        if ok2 and type(list) == "table" then return list end
+        return {}
+    end
+
+    local function writeProfileIndex(list)
+        pcall(function()
+            local json = HttpService:JSONEncode(list)
+            writefile(PROFILES_INDEX, json)
+        end)
+    end
+
+    local function addToProfileIndex(name)
+        local list = readProfileIndex()
+        for _, n in ipairs(list) do
+            if n == name then return end
+        end
+        table.insert(list, name)
+        writeProfileIndex(list)
+    end
+
+    local function removeFromProfileIndex(name)
+        local list = readProfileIndex()
+        for i, n in ipairs(list) do
+            if n == name then table.remove(list, i); break end
+        end
+        writeProfileIndex(list)
+    end
+
+    local function gatherConfigData()
         local data = {}
         for id, ctrl in pairs(Controls) do
             if ctrl.type == "toggle" or ctrl.type == "slider" or ctrl.type == "dropdown" or ctrl.type == "keybind" or ctrl.type == "textinput" then
@@ -1915,17 +2120,10 @@ function AXUI:CreateWindow(config)
                 end
             end
         end
-        local ok, json = pcall(function() return HttpService:JSONEncode(data) end)
-        if ok then pcall(function() writefile(CONFIG_FILE, json) end); toast("Config saved") end
+        return data
     end
 
-    local function loadConfig()
-        if not isfile or not readfile then toast("File API not available", true); return end
-        if not isfile(CONFIG_FILE) then toast("No config found", true); return end
-        local ok, json = pcall(function() return readfile(CONFIG_FILE) end)
-        if not ok then return end
-        local ok2, data = pcall(function() return HttpService:JSONDecode(json) end)
-        if not ok2 or type(data) ~= "table" then return end
+    local function applyConfigData(data)
         for id, val in pairs(data) do
             local ctrl = Controls[id]
             if ctrl and ctrl.setValue then
@@ -1936,7 +2134,65 @@ function AXUI:CreateWindow(config)
                 end
             end
         end
-        toast("Config loaded")
+    end
+
+    -- name is optional: omitting it keeps the original single-file behavior
+    -- (CONFIG_FILE), so existing scripts calling SaveConfig()/LoadConfig() with no
+    -- arguments are unaffected. Passing a name saves/loads a separate named
+    -- profile file instead.
+    local function saveConfig(name)
+        if not isfolder or not writefile then toast("File API not available", true); return end
+        local data = gatherConfigData()
+        local ok, json = pcall(function() return HttpService:JSONEncode(data) end)
+        if not ok then return end
+        if name then
+            name = sanitizeProfileName(name)
+            if name == "" then toast("Invalid profile name", true); return end
+            ensureProfilesDir()
+            pcall(function() writefile(PROFILES_DIR .. "/" .. name .. ".json", json) end)
+            addToProfileIndex(name)
+            toast("Saved profile \"" .. name .. "\"")
+        else
+            pcall(function() if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end end)
+            pcall(function() writefile(CONFIG_FILE, json) end)
+            toast("Config saved")
+        end
+    end
+
+    local function loadConfig(name)
+        if not isfile or not readfile then toast("File API not available", true); return end
+        local path = CONFIG_FILE
+        if name then
+            name = sanitizeProfileName(name)
+            if name == "" then toast("Invalid profile name", true); return end
+            path = PROFILES_DIR .. "/" .. name .. ".json"
+        end
+        if not isfile(path) then
+            toast(name and ("Profile \"" .. name .. "\" not found") or "No config found", true)
+            return
+        end
+        local ok, json = pcall(function() return readfile(path) end)
+        if not ok then return end
+        local ok2, data = pcall(function() return HttpService:JSONDecode(json) end)
+        if not ok2 or type(data) ~= "table" then return end
+        applyConfigData(data)
+        toast(name and ("Loaded profile \"" .. name .. "\"") or "Config loaded")
+    end
+
+    local function listConfigs()
+        return readProfileIndex()
+    end
+
+    local function deleteConfig(name)
+        name = sanitizeProfileName(name)
+        if name == "" then toast("Invalid profile name", true); return false end
+        local path = PROFILES_DIR .. "/" .. name .. ".json"
+        if isfile and isfile(path) and delfile then
+            pcall(function() delfile(path) end)
+        end
+        removeFromProfileIndex(name)
+        toast("Deleted profile \"" .. name .. "\"")
+        return true
     end
 
     -- ───────────────────────────────────────────
@@ -2092,8 +2348,8 @@ function AXUI:CreateWindow(config)
 
         local Tab = {}
         function Tab:Group(title)
-            local section = makeGroup(title)
-            table.insert(allGroups, { tab = name, section = section, title = title })
+            local section, headerLabel = makeGroup(title)
+            table.insert(allGroups, { tab = name, section = section, title = title, headerLabel = headerLabel })
 
             -- activate first tab automatically
             if not activeTab then switchTab(name) end
@@ -2155,13 +2411,23 @@ function AXUI:CreateWindow(config)
     function Window:SetVisible(v) setWindowVisible(v) end
     function Window:IsVisible() return window.Visible end
     function Window:Destroy() fullUnload() end
-    function Window:SaveConfig() saveConfig() end
-    function Window:LoadConfig() loadConfig() end
+    function Window:SaveConfig(name) saveConfig(name) end
+    function Window:LoadConfig(name) loadConfig(name) end
+    function Window:ListConfigs() return listConfigs() end
+    function Window:DeleteConfig(name) return deleteConfig(name) end
 
     function Window:SetAccent(color)
         setAccent(color)
-        logoBox.BackgroundColor3 = Theme.ACCENT
-        if connDot then connDot.BackgroundColor3 = Theme.ACCENT end
+        -- One pass over every unconditionally-accent-colored element registered via
+        -- bindAccent()/accentStroke() during creation (rows, strokes, sliders,
+        -- dropdowns, keybinds, the header/sidebar/search chrome, etc.) instead of a
+        -- small hand-picked list.
+        for _, b in ipairs(accentBindings) do
+            pcall(function() b.instance[b.prop] = Theme.ACCENT end)
+        end
+        -- Active-tab indicator/icon/label are conditional (only the active tab gets
+        -- accent color, inactive ones stay TEXT_DIM), so they can't live in the static
+        -- registry above — handled here same as before.
         for _, data in pairs(tabButtons) do
             if data.indicator.Visible then
                 data.indicator.BackgroundColor3 = Theme.ACCENT
@@ -2169,11 +2435,10 @@ function AXUI:CreateWindow(config)
                 data.label.TextColor3 = Theme.ACCENT
             end
         end
-        activeTabLabel.TextColor3 = Theme.ACCENT
-        -- Re-apply the new theme to any control whose colored elements were only set
-        -- at creation time or on last interaction (e.g. a toggle's track color), so
-        -- switching themes updates them immediately instead of waiting for the user
-        -- to re-toggle each one.
+        -- Re-apply the new theme to any control whose colored elements are
+        -- state-dependent (e.g. a toggle's on/off track color) rather than always
+        -- accent, so switching themes updates them immediately instead of waiting
+        -- for the user to re-toggle each one.
         for _, ctrl in pairs(Controls) do
             if ctrl.refreshTheme then pcall(ctrl.refreshTheme) end
         end
